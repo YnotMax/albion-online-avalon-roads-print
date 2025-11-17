@@ -1,5 +1,7 @@
-
 import { NodeObject, LinkObject } from 'force-graph';
+import { ZoneType } from './data/zoneNames';
+
+export type { ZoneType };
 
 export interface AlbionConnection {
   origem: string | null;
@@ -10,6 +12,7 @@ export interface AlbionConnection {
 export interface CustomNode extends NodeObject {
   id: string;
   name: string;
+  type: ZoneType;
 }
 
 export interface CustomLink extends LinkObject {
@@ -21,4 +24,9 @@ export interface CustomLink extends LinkObject {
 export interface GraphData {
   nodes: CustomNode[];
   links: CustomLink[];
+}
+
+export interface PendingValidation {
+  connection: AlbionConnection;
+  image: string;
 }

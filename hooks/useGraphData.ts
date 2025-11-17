@@ -1,7 +1,7 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { AlbionConnection, CustomNode, CustomLink, GraphData } from '../types';
 import logger from '../services/logger';
+import { getZoneType } from '../data/zoneNames';
 
 export const useGraphData = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
@@ -21,10 +21,10 @@ export const useGraphData = () => {
 
       // Add nodes if they don't exist
       if (!newNodes.find(node => node.id === origem)) {
-        newNodes.push({ id: origem, name: origem });
+        newNodes.push({ id: origem, name: origem, type: getZoneType(origem) });
       }
       if (!newNodes.find(node => node.id === destino)) {
-        newNodes.push({ id: destino, name: destino });
+        newNodes.push({ id: destino, name: destino, type: getZoneType(destino) });
       }
 
       const expiration = Date.now() + minutos_ate_fechar * 60 * 1000;
@@ -45,6 +45,45 @@ export const useGraphData = () => {
     });
   }, []);
   
+  const updateNodeName = useCallback((oldName: string, newName: string): boolean => {
+    if (!newName || newName.trim() === '') {
+        logger.warn('Attempted to update node with empty name.');
+        return false;
+    }
+
+    const trimmedNewName = newName.trim();
+
+    if (graphData.nodes.some(node => node.id === trimmedNewName)) {
+        logger.warn(`Attempted to rename node to an existing name: ${trimmedNewName}`);
+        return false;
+    }
+
+    logger.info(`Updating node name from "${oldName}" to "${trimmedNewName}"`);
+
+    setGraphData(prevData => {
+        const newNodes = prevData.nodes.map(node => {
+            if (node.id === oldName) {
+                return { ...node, id: trimmedNewName, name: trimmedNewName, type: getZoneType(trimmedNewName) };
+            }
+            return node;
+        });
+
+        const newLinks = prevData.links.map(link => {
+            const newLink = { ...link };
+            if (link.source === oldName) {
+                newLink.source = trimmedNewName;
+            }
+            if (link.target === oldName) {
+                newLink.target = trimmedNewName;
+            }
+            return newLink;
+        });
+        
+        return { nodes: newNodes, links: newLinks };
+    });
+    return true;
+  }, [graphData.nodes]);
+
   const clearGraph = useCallback(() => {
     logger.info('Graph cleared.');
     setGraphData({ nodes: [], links: [] });
@@ -90,5 +129,5 @@ export const useGraphData = () => {
     return () => clearInterval(interval);
   }, []);
 
-  return { ...graphData, addConnection, clearGraph, setGraph };
+  return { ...graphData, addConnection, clearGraph, setGraph, updateNodeName };
 };

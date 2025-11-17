@@ -1,18 +1,27 @@
-import React, { useEffect, useState, useRef } from 'react';
+
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import ForceGraph2D, { NodeObject } from 'react-force-graph-2d';
-import { GraphData, CustomNode } from '../types';
+import { GraphData, CustomNode, ZoneType } from '../types';
+import { EditIcon } from './icons';
 
 interface GraphCanvasProps {
   nodes: GraphData['nodes'];
   links: GraphData['links'];
+  onNodeUpdate: (oldName: string, newName: string) => void;
 }
 
-// Minimal type for the force graph instance to satisfy TypeScript
 interface ForceGraphInstance {
   zoomToFit: (duration?: number, padding?: number) => void;
   centerAt: (x: number, y: number, duration?: number) => void;
   zoom: (k: number, duration?: number) => void;
 }
+
+const ZONE_TYPE_COLORS: Record<ZoneType, string> = {
+  royal: '#58A6FF',   // Accent Blue
+  black: '#E0E0E0',   // High-contrast light grey (for black zones on dark bg)
+  avalon: '#FFC700',  // Gold
+  unknown: '#8B949E', // Grey
+};
 
 const formatTime = (ms: number): string => {
   if (ms <= 0) return "Expired";
@@ -23,16 +32,55 @@ const formatTime = (ms: number): string => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 };
 
-export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
-  const fgRef = useRef<ForceGraphInstance>();
+export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUpdate }) => {
+  const fgRef = useRef<ForceGraphInstance | null>(null);
   const [graphData, setGraphData] = useState({ nodes, links });
-  const [selectedNode, setSelectedNode] = useState<CustomNode | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [, setTicker] = useState(0); // Used to force re-render for timer updates
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isEditingNode, setIsEditingNode] = useState(false);
+  const [editedNodeName, setEditedNodeName] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedNode = useMemo(
+    () => nodes.find((n) => n.id === selectedNodeId) as CustomNode | undefined,
+    [nodes, selectedNodeId]
+  );
+
+  const filteredData = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
+    if (!term) {
+        return { nodes, links };
+    }
+
+    const matchingNodes = nodes.filter(node => (node.name as string).toLowerCase().includes(term));
+    const matchingNodeIds = new Set(matchingNodes.map(n => n.id));
+
+    if (matchingNodeIds.size === 0) {
+        return { nodes: [], links: [] };
+    }
+
+    const filteredLinks = links.filter(link => 
+        matchingNodeIds.has(link.source as string) || matchingNodeIds.has(link.target as string)
+    );
+    
+    const connectedNodeIds = new Set<string>();
+    filteredLinks.forEach(link => {
+        connectedNodeIds.add(link.source as string);
+        connectedNodeIds.add(link.target as string);
+    });
+    
+    matchingNodeIds.forEach(id => connectedNodeIds.add(id as string));
+    
+    const filteredNodes = nodes.filter(node => connectedNodeIds.has(node.id as string));
+
+    return { nodes: filteredNodes, links: filteredLinks };
+  }, [nodes, links, searchTerm]);
 
   useEffect(() => {
-    setGraphData({ nodes, links });
+    setGraphData(filteredData);
     fgRef.current?.zoomToFit(400, 100);
-  }, [nodes, links]);
+  }, [filteredData]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -40,13 +88,17 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+  
+  useEffect(() => {
+    if (isEditingNode && nameInputRef.current) {
+        nameInputRef.current.focus();
+        nameInputRef.current.select();
+    }
+  }, [isEditingNode]);
 
   const handleNodeClick = (node: NodeObject) => {
-    const fullNode = nodes.find(n => n.id === node.id);
-    if (fullNode) {
-      setSelectedNode(fullNode);
-    }
-     // Zoom in on the clicked node
+    setSelectedNodeId(node.id as string);
+    setIsEditingNode(false);
     if (node && typeof node.x === 'number' && typeof node.y === 'number' && fgRef.current) {
         fgRef.current.centerAt(node.x, node.y, 1000);
         fgRef.current.zoom(2.5, 500);
@@ -54,11 +106,21 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
   };
 
   const handleBackgroundClick = () => {
-    setSelectedNode(null);
-    // Reset zoom to fit all nodes
+    setSelectedNodeId(null);
+    setIsEditingNode(false);
     fgRef.current?.zoomToFit(400, 100);
   };
   
+  const handleConfirmEdit = () => {
+    if (selectedNode && editedNodeName.trim() && editedNodeName.trim() !== selectedNode.name) {
+        const oldName = selectedNode.name;
+        const newName = editedNodeName.trim();
+        onNodeUpdate(oldName, newName);
+        setSelectedNodeId(newName);
+    }
+    setIsEditingNode(false);
+  };
+
   const connections = selectedNode
     ? links
         .filter(link => link.source === selectedNode.id || link.target === selectedNode.id)
@@ -76,12 +138,14 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
     const padding = 8 / globalScale;
     const bgWidth = textWidth + 2 * padding;
     const bgHeight = fontSize + 2 * padding;
+    const nodeType: ZoneType = node.type || 'unknown';
+    const nodeColor = ZONE_TYPE_COLORS[nodeType];
 
     ctx.fillStyle = 'rgba(22, 27, 34, 0.9)';
     ctx.fillRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
     
-    ctx.strokeStyle = '#30363D';
-    ctx.lineWidth = 1 / globalScale;
+    ctx.strokeStyle = nodeColor;
+    ctx.lineWidth = 1.5 / globalScale;
     ctx.strokeRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
 
     ctx.textAlign = 'center';
@@ -96,16 +160,26 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
 
     if (typeof start !== 'object' || typeof end !== 'object' || !start || !end) return;
     
-    // Draw link line
+    const remainingTime = link.expiration - Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+    const twoMinutes = 2 * 60 * 1000;
+
+    let linkColor = '#58A6FF'; // Default accent color
+    if (remainingTime > 0 && remainingTime <= twoMinutes) {
+        linkColor = '#F85149'; // Danger red
+    } else if (remainingTime > 0 && remainingTime <= tenMinutes) {
+        linkColor = '#E3B341'; // Warning yellow
+    } else if (remainingTime <= 0) {
+        linkColor = '#8B949E'; // Expired grey
+    }
+
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = '#58A6FF';
+    ctx.strokeStyle = linkColor;
     ctx.lineWidth = 1.5 / globalScale;
     ctx.stroke();
 
-    // Draw timer
-    const remainingTime = link.expiration - Date.now();
     const timeLabel = formatTime(remainingTime);
     const fontSize = 12 / globalScale;
     ctx.font = `bold ${fontSize}px Sans-Serif`;
@@ -127,6 +201,16 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
 
   return (
     <>
+      <div className="absolute top-4 left-4 z-10">
+          <input
+              type="text"
+              placeholder="Search zones..."
+              aria-label="Search zones"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-64 bg-secondary p-2 border border-border rounded-md text-text-primary shadow-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+      </div>
       <ForceGraph2D
         ref={fgRef as any}
         graphData={graphData}
@@ -149,7 +233,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-bold text-lg text-accent">Node Details</h3>
             <button
-              onClick={() => setSelectedNode(null)}
+              onClick={() => setSelectedNodeId(null)}
               className="text-2xl text-text-secondary hover:text-text-primary leading-none"
               aria-label="Close node details"
             >
@@ -157,7 +241,43 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links }) => {
             </button>
           </div>
           <div>
-            <p><span className="font-semibold text-text-secondary">Name:</span> {selectedNode.name}</p>
+            {isEditingNode ? (
+                <div className="flex items-center gap-2">
+                    <label htmlFor="node-name-input" className="font-semibold text-text-secondary">Name:</label>
+                    <input
+                        id="node-name-input"
+                        ref={nameInputRef}
+                        type="text"
+                        value={editedNodeName}
+                        onChange={(e) => setEditedNodeName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleConfirmEdit();
+                            if (e.key === 'Escape') setIsEditingNode(false);
+                        }}
+                        onBlur={handleConfirmEdit}
+                        className="flex-grow bg-primary border border-border rounded-md py-1 px-2 text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                </div>
+            ) : (
+                <div className="flex justify-between items-center">
+                    <p><span className="font-semibold text-text-secondary">Name:</span> {selectedNode.name}</p>
+                    <button
+                        onClick={() => { setIsEditingNode(true); setEditedNodeName(selectedNode.name); }}
+                        className="p-1 text-text-secondary hover:text-accent rounded-md"
+                        aria-label="Edit node name"
+                    >
+                        <EditIcon />
+                    </button>
+                </div>
+            )}
+          </div>
+          <div className="capitalize mt-2">
+            <p>
+                <span className="font-semibold text-text-secondary">Type: </span>
+                <span style={{ color: ZONE_TYPE_COLORS[selectedNode.type] || ZONE_TYPE_COLORS.unknown, fontWeight: 'bold' }}>
+                    {selectedNode.type}
+                </span>
+            </p>
           </div>
           {connections.length > 0 && (
             <div className="mt-4 pt-3 border-t border-border">

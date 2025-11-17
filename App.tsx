@@ -9,16 +9,30 @@ import { Toast } from './components/Toast';
 import { ManualInputForm } from './components/ManualInputForm';
 import { DebugLog } from './components/DebugLog';
 import logger from './services/logger';
+import { AlbionConnection, PendingValidation } from './types';
+import { ValidationModal } from './components/ValidationModal';
+import { getApiKey, clearApiKey } from './services/apiKeyService';
+import { ApiKeySetup } from './components/ApiKeySetup';
+import { SettingsModal } from './components/SettingsModal';
 
 const App: React.FC = () => {
-  const { nodes, links, addConnection, clearGraph, setGraph } = useGraphData();
+  const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName } = useGraphData();
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isLogVisible, setIsLogVisible] = useState(false);
+  const [pendingValidation, setPendingValidation] = useState<PendingValidation | null>(null);
+  const [isKeySet, setIsKeySet] = useState(false);
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
 
+  useEffect(() => {
+    if (getApiKey()) {
+      setIsKeySet(true);
+    }
+  }, []);
+  
   const handlePaste = useCallback(async (event: ClipboardEvent) => {
-    if (isLoading) return;
+    if (isLoading || pendingValidation) return;
 
     logger.info('Paste event detected.');
     const items = event.clipboardData?.items;
@@ -50,16 +64,17 @@ const App: React.FC = () => {
       reader.readAsDataURL(imageFile);
       reader.onload = async () => {
         try {
-          const base64Image = (reader.result as string).split(',')[1];
+          const base64ImageWithHeader = reader.result as string;
+          const base64Image = base64ImageWithHeader.split(',')[1];
           const connectionData = await extractConnectionFromImage(base64Image);
           
-          if (connectionData && connectionData.origem && connectionData.destino && connectionData.minutos_ate_fechar) {
-            addConnection(connectionData);
-            const successMsg = `AI added: ${connectionData.origem} -> ${connectionData.destino}`;
-            setToast({ message: successMsg, type: 'success' });
-            logger.info(successMsg);
+          if (connectionData && connectionData.origem && connectionData.destino && connectionData.minutos_ate_fechar != null) {
+            setPendingValidation({
+              connection: connectionData,
+              image: base64ImageWithHeader,
+            });
           } else {
-            throw new Error('Could not extract connection data from image.');
+            throw new Error('Could not extract complete connection data from image.');
           }
         } catch (error) {
           console.error(error);
@@ -82,7 +97,7 @@ const App: React.FC = () => {
       setToast({ message: errorMessage, type: 'error' });
       logger.error(`Image processing error: ${errorMessage}`);
     }
-  }, [addConnection, isLoading]);
+  }, [isLoading, pendingValidation]);
 
   useEffect(() => {
     window.addEventListener('paste', handlePaste);
@@ -127,6 +142,40 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNodeUpdate = (oldName: string, newName: string) => {
+    const success = updateNodeName(oldName, newName);
+    if (success) {
+      setToast({ message: `Renamed "${oldName}" to "${newName}".`, type: 'success' });
+      logger.info(`Node renamed from ${oldName} to ${newName}`);
+    } else {
+      setToast({ message: `Failed to rename. Zone "${newName}" might already exist.`, type: 'error' });
+      logger.error(`Failed to rename node from ${oldName} to ${newName}.`);
+    }
+  };
+
+  const handleValidationConfirm = (validatedConnection: AlbionConnection) => {
+    addConnection(validatedConnection);
+    const successMsg = `Added: ${validatedConnection.origem} -> ${validatedConnection.destino}`;
+    setToast({ message: successMsg, type: 'success' });
+    logger.info(`User confirmed connection: ${successMsg}`);
+    setPendingValidation(null);
+  };
+
+  const handleValidationCancel = () => {
+    setToast({ message: 'Connection discarded.', type: 'error' });
+    logger.warn('User discarded pending connection.');
+    setPendingValidation(null);
+  };
+
+  const handleKeyReset = () => {
+    clearApiKey();
+    setIsKeySet(false);
+  };
+
+  if (!isKeySet) {
+    return <ApiKeySetup onKeySet={() => setIsKeySet(true)} />;
+  }
+
   return (
     <div className="flex flex-col h-screen bg-primary overflow-hidden">
       <Header 
@@ -137,6 +186,7 @@ const App: React.FC = () => {
         isFormVisible={isFormVisible}
         onToggleLog={() => setIsLogVisible(!isLogVisible)}
         isLogVisible={isLogVisible}
+        onToggleSettings={() => setIsSettingsVisible(true)}
       />
       
       {isFormVisible && (
@@ -149,7 +199,7 @@ const App: React.FC = () => {
       )}
 
       <main className="flex-grow relative">
-        <GraphCanvas nodes={nodes} links={links} />
+        <GraphCanvas nodes={nodes} links={links} onNodeUpdate={handleNodeUpdate} />
         {nodes.length === 0 && !isLoading && <Instructions />}
         {isLoading && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center z-20 space-y-4">
@@ -161,6 +211,21 @@ const App: React.FC = () => {
       </main>
 
       <DebugLog isVisible={isLogVisible} />
+      
+      {isSettingsVisible && (
+        <SettingsModal 
+          onClose={() => setIsSettingsVisible(false)}
+          onKeyReset={handleKeyReset}
+        />
+      )}
+
+      {pendingValidation && (
+        <ValidationModal 
+          data={pendingValidation}
+          onConfirm={handleValidationConfirm}
+          onCancel={handleValidationCancel}
+        />
+      )}
 
       {toast && (
         <Toast
