@@ -1,11 +1,12 @@
 
 import React from 'react';
-import { SaveIcon, LoadIcon, ClearIcon, AddConnectionIcon, DebugIcon, SettingsIcon } from './icons';
+import { SaveIcon, LoadIcon, ClearIcon, AddConnectionIcon, DebugIcon, SettingsIcon, UploadIcon } from './icons';
 
 interface HeaderProps {
   onClear: () => void;
   onSave: () => void;
   onLoad: () => void;
+  onUpload: () => void;
   onToggleForm: () => void;
   isFormVisible: boolean;
   onToggleLog: () => void;
@@ -23,7 +24,7 @@ const IconButton: React.FC<{ onClick: () => void; children: React.ReactNode; 'ar
   </button>
 );
 
-export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onToggleForm, isFormVisible, onToggleLog, isLogVisible, onToggleSettings }) => {
+export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onUpload, onToggleForm, isFormVisible, onToggleLog, isLogVisible, onToggleSettings }) => {
   return (
     <header className="bg-secondary border-b border-border p-2 flex justify-between items-center z-10 shadow-md flex-shrink-0">
       <h1 className="text-lg md:text-xl font-bold text-text-primary ml-2">Avalon Scribe</h1>
@@ -38,6 +39,9 @@ export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onToggl
           <ClearIcon />
         </IconButton>
         <div className="w-px h-6 bg-border mx-1"></div>
+        <IconButton onClick={onUpload} aria-label="Upload Screenshot" className="hover:bg-tertiary">
+          <UploadIcon />
+        </IconButton>
         <IconButton onClick={onToggleForm} aria-label="Toggle Manual Connection Form" className={`hover:bg-tertiary ${isFormVisible ? 'bg-tertiary text-accent' : ''}`}>
           <AddConnectionIcon />
         </IconButton>

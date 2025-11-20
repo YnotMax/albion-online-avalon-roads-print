@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GraphCanvas } from './components/GraphCanvas';
 import { Header } from './components/Header';
 import { Instructions } from './components/Instructions';
@@ -9,14 +9,14 @@ import { Toast } from './components/Toast';
 import { ManualInputForm } from './components/ManualInputForm';
 import { DebugLog } from './components/DebugLog';
 import logger from './services/logger';
-import { AlbionConnection, PendingValidation } from './types';
+import { AlbionConnection, PendingValidation, ZoneType } from './types';
 import { ValidationModal } from './components/ValidationModal';
 import { getApiKey, clearApiKey } from './services/apiKeyService';
 import { ApiKeySetup } from './components/ApiKeySetup';
 import { SettingsModal } from './components/SettingsModal';
 
 const App: React.FC = () => {
-  const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName } = useGraphData();
+  const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType } = useGraphData();
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
@@ -24,38 +24,17 @@ const App: React.FC = () => {
   const [pendingValidation, setPendingValidation] = useState<PendingValidation | null>(null);
   const [isKeySet, setIsKeySet] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (getApiKey()) {
       setIsKeySet(true);
     }
   }, []);
-  
-  const handlePaste = useCallback(async (event: ClipboardEvent) => {
-    if (isLoading || pendingValidation) return;
 
-    logger.info('Paste event detected.');
-    const items = event.clipboardData?.items;
-    if (!items) {
-        logger.error('Clipboard data or items are null.');
-        return;
-    };
-
-    let imageFile: File | null = null;
-    for (const item of items) {
-      if (item.type.indexOf('image') !== -1) {
-        imageFile = item.getAsFile();
-        break;
-      }
-    }
-
-    if (!imageFile) {
-      setToast({ message: 'No image found on clipboard.', type: 'error' });
-      logger.warn('No image file found on clipboard.');
-      return;
-    }
-
-    logger.info('Image found on clipboard, starting processing.');
+  // Reusable function to process an image file (from paste or upload)
+  const processImageFile = useCallback(async (imageFile: File) => {
+    logger.info('Processing image file...');
     setIsLoading(true);
     setToast(null);
 
@@ -87,7 +66,7 @@ const App: React.FC = () => {
       };
       reader.onerror = () => {
           setIsLoading(false);
-          const errorMsg = 'Failed to read the image from clipboard.';
+          const errorMsg = 'Failed to read the image file.';
           setToast({ message: errorMsg, type: 'error' });
           logger.error(errorMsg);
       };
@@ -97,7 +76,38 @@ const App: React.FC = () => {
       setToast({ message: errorMessage, type: 'error' });
       logger.error(`Image processing error: ${errorMessage}`);
     }
-  }, [isLoading, pendingValidation]);
+  }, []);
+  
+  const handlePaste = useCallback(async (event: ClipboardEvent) => {
+    if (isLoading || pendingValidation) return;
+
+    logger.info('Paste event detected.');
+    const items = event.clipboardData?.items;
+    if (!items) {
+        logger.error('Clipboard data or items are null.');
+        return;
+    };
+
+    let imageFile: File | null = null;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        imageFile = item.getAsFile();
+        break;
+      }
+    }
+
+    if (!imageFile) {
+      // Only show toast if no image found IF we want to be strict, 
+      // but normally we don't want to error on pasting text. 
+      // However, logic stays consistent with original requirement to warn if no image.
+      // setToast({ message: 'No image found on clipboard.', type: 'error' }); 
+      logger.warn('No image file found on clipboard.');
+      return;
+    }
+
+    await processImageFile(imageFile);
+
+  }, [isLoading, pendingValidation, processImageFile]);
 
   useEffect(() => {
     window.addEventListener('paste', handlePaste);
@@ -106,9 +116,33 @@ const App: React.FC = () => {
     };
   }, [handlePaste]);
   
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+        processImageFile(file);
+    }
+    // Reset input so same file can be selected again if needed
+    if (event.target) {
+        event.target.value = '';
+    }
+  };
+
+  const triggerFileUpload = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.click();
+    }
+  };
+
   const saveMap = () => {
     try {
-      const mapData = JSON.stringify({ nodes, links });
+      // Clean links to ensure we save IDs, not circular node objects from ForceGraph
+      const cleanLinks = links.map(link => ({
+        ...link,
+        source: typeof link.source === 'object' ? (link.source as any).id : link.source,
+        target: typeof link.target === 'object' ? (link.target as any).id : link.target,
+      }));
+
+      const mapData = JSON.stringify({ nodes, links: cleanLinks });
       localStorage.setItem('avalonScribeMap', mapData);
       setToast({ message: 'Map saved successfully!', type: 'success' });
       logger.info('Map saved to localStorage.');
@@ -153,6 +187,10 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNodeTypeUpdate = (nodeId: string, type: ZoneType) => {
+    updateNodeType(nodeId, type);
+  };
+
   const handleValidationConfirm = (validatedConnection: AlbionConnection) => {
     addConnection(validatedConnection);
     const successMsg = `Added: ${validatedConnection.origem} -> ${validatedConnection.destino}`;
@@ -182,11 +220,20 @@ const App: React.FC = () => {
         onClear={clearGraph} 
         onLoad={loadMap} 
         onSave={saveMap} 
+        onUpload={triggerFileUpload}
         onToggleForm={() => setIsFormVisible(!isFormVisible)}
         isFormVisible={isFormVisible}
         onToggleLog={() => setIsLogVisible(!isLogVisible)}
         isLogVisible={isLogVisible}
         onToggleSettings={() => setIsSettingsVisible(true)}
+      />
+      
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*" 
+        onChange={handleFileUpload} 
       />
       
       {isFormVisible && (
@@ -199,7 +246,12 @@ const App: React.FC = () => {
       )}
 
       <main className="flex-grow relative">
-        <GraphCanvas nodes={nodes} links={links} onNodeUpdate={handleNodeUpdate} />
+        <GraphCanvas 
+            nodes={nodes} 
+            links={links} 
+            onNodeUpdate={handleNodeUpdate} 
+            onNodeTypeUpdate={handleNodeTypeUpdate}
+        />
         {nodes.length === 0 && !isLoading && <Instructions />}
         {isLoading && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center z-20 space-y-4">

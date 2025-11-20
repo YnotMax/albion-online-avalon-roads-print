@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import ForceGraph2D, { NodeObject } from 'react-force-graph-2d';
 import { GraphData, CustomNode, ZoneType } from '../types';
 import { EditIcon } from './icons';
@@ -8,12 +8,13 @@ interface GraphCanvasProps {
   nodes: GraphData['nodes'];
   links: GraphData['links'];
   onNodeUpdate: (oldName: string, newName: string) => void;
+  onNodeTypeUpdate: (nodeId: string, newType: ZoneType) => void;
 }
 
 interface ForceGraphInstance {
   zoomToFit: (duration?: number, padding?: number) => void;
-  centerAt: (x: number, y: number, duration?: number) => void;
-  zoom: (k: number, duration?: number) => void;
+  centerAt: (x: number, y: number, duration?: number) => { x: number, y: number }; // Setter returns nothing/void usually, getter returns obj
+  zoom: (k?: number, duration?: number) => number; // Getter returns k
 }
 
 const ZONE_TYPE_COLORS: Record<ZoneType, string> = {
@@ -22,6 +23,8 @@ const ZONE_TYPE_COLORS: Record<ZoneType, string> = {
   avalon: '#FFC700',  // Gold
   unknown: '#8B949E', // Grey
 };
+
+const VIEW_STORAGE_KEY = 'avalonScribeGraphView';
 
 const formatTime = (ms: number): string => {
   if (ms <= 0) return "Expired";
@@ -32,7 +35,7 @@ const formatTime = (ms: number): string => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 };
 
-export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUpdate }) => {
+export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUpdate, onNodeTypeUpdate }) => {
   const fgRef = useRef<ForceGraphInstance | null>(null);
   const [graphData, setGraphData] = useState({ nodes, links });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
   const [isEditingNode, setIsEditingNode] = useState(false);
   const [editedNodeName, setEditedNodeName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const saveViewTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) as CustomNode | undefined,
@@ -79,8 +83,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
 
   useEffect(() => {
     setGraphData(filteredData);
-    fgRef.current?.zoomToFit(400, 100);
-  }, [filteredData]);
+    // Only zoom to fit if we are searching or initial load; frequent re-centering disrupts manual navigation
+    if (searchTerm) {
+        fgRef.current?.zoomToFit(400, 100);
+    }
+  }, [filteredData, searchTerm]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -95,6 +102,37 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
         nameInputRef.current.select();
     }
   }, [isEditingNode]);
+  
+  // Restore View on Mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+        const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
+        if (savedView && fgRef.current) {
+            try {
+                const { zoom, x, y } = JSON.parse(savedView);
+                // @ts-ignore - ForceGraph types mismatch sometimes for centerAt return
+                fgRef.current.centerAt(x, y, 100); // Short animation to smooth it
+                fgRef.current.zoom(zoom, 100);
+            } catch (e) {
+                console.error("Failed to restore graph view", e);
+            }
+        }
+    }, 300); // Slight delay to ensure graph initialized
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleInteraction = useCallback(() => {
+    clearTimeout(saveViewTimeout.current);
+    saveViewTimeout.current = setTimeout(() => {
+      if (fgRef.current) {
+        const zoom = fgRef.current.zoom();
+        // @ts-ignore
+        const center = fgRef.current.centerAt(); 
+        const viewState = { zoom, x: center.x, y: center.y };
+        localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(viewState));
+      }
+    }, 500);
+  }, []);
 
   const handleNodeClick = (node: NodeObject) => {
     setSelectedNodeId(node.id as string);
@@ -102,21 +140,23 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
     if (node && typeof node.x === 'number' && typeof node.y === 'number' && fgRef.current) {
         fgRef.current.centerAt(node.x, node.y, 1000);
         fgRef.current.zoom(2.5, 500);
+        // Save view after animation
+        setTimeout(handleInteraction, 1100);
     }
   };
 
   const handleBackgroundClick = () => {
     setSelectedNodeId(null);
     setIsEditingNode(false);
-    fgRef.current?.zoomToFit(400, 100);
   };
   
   const handleConfirmEdit = () => {
-    if (selectedNode && editedNodeName.trim() && editedNodeName.trim() !== selectedNode.name) {
+    if (selectedNode && editedNodeName.trim() && editedNodeName.trim().toUpperCase() !== selectedNode.name.toUpperCase()) {
         const oldName = selectedNode.name;
         const newName = editedNodeName.trim();
         onNodeUpdate(oldName, newName);
-        setSelectedNodeId(newName);
+        // Update selected ID to the new one so the modal stays open
+        setSelectedNodeId(newName.toUpperCase());
     }
     setIsEditingNode(false);
   };
@@ -126,7 +166,9 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
         .filter(link => link.source === selectedNode.id || link.target === selectedNode.id)
         .map(link => {
             const targetId = link.source === selectedNode.id ? link.target : link.source;
-            return nodes.find(n => n.id === targetId)?.name || targetId;
+            // Handle targetId being an object (d3 behavior) or string
+            const targetIdString = typeof targetId === 'object' ? (targetId as any).id : targetId;
+            return nodes.find(n => n.id === targetIdString)?.name || targetIdString;
         })
     : [];
 
@@ -145,7 +187,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
     ctx.fillRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
     
     ctx.strokeStyle = nodeColor;
-    ctx.lineWidth = 1.5 / globalScale;
+    ctx.lineWidth = 2 / globalScale; // Slightly thicker to see color better
     ctx.strokeRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
 
     ctx.textAlign = 'center';
@@ -223,10 +265,15 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
         linkCanvasObject={linkCanvasObject}
         backgroundColor="#0D1117"
         cooldownTicks={100}
-        onEngineStop={() => fgRef.current?.zoomToFit(400, 100)}
+        onEngineStop={() => {
+             // Only zoom to fit if no search and no saved view (or first load)
+             // We let the restored view take precedence if available
+             if (searchTerm) fgRef.current?.zoomToFit(400, 100);
+        }}
         d3AlphaDecay={0.05}
         onNodeClick={handleNodeClick}
         onBackgroundClick={handleBackgroundClick}
+        onZoom={handleInteraction}
       />
       {selectedNode && (
         <div className="absolute top-4 right-4 bg-secondary border border-border rounded-lg shadow-lg p-4 w-64 max-w-xs z-10 text-text-primary animate-fade-in-right">
@@ -240,10 +287,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
               &times;
             </button>
           </div>
-          <div>
+          
+          {/* Name Editing Section */}
+          <div className="mb-4">
             {isEditingNode ? (
                 <div className="flex items-center gap-2">
-                    <label htmlFor="node-name-input" className="font-semibold text-text-secondary">Name:</label>
+                    <label htmlFor="node-name-input" className="sr-only">Name</label>
                     <input
                         id="node-name-input"
                         ref={nameInputRef}
@@ -255,15 +304,15 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
                             if (e.key === 'Escape') setIsEditingNode(false);
                         }}
                         onBlur={handleConfirmEdit}
-                        className="flex-grow bg-primary border border-border rounded-md py-1 px-2 text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                        className="w-full bg-primary border border-border rounded-md py-1 px-2 text-text-primary focus:outline-none focus:ring-1 focus:ring-accent uppercase"
                     />
                 </div>
             ) : (
-                <div className="flex justify-between items-center">
-                    <p><span className="font-semibold text-text-secondary">Name:</span> {selectedNode.name}</p>
+                <div className="flex justify-between items-center group">
+                    <p className="text-lg font-bold break-words w-full">{selectedNode.name}</p>
                     <button
                         onClick={() => { setIsEditingNode(true); setEditedNodeName(selectedNode.name); }}
-                        className="p-1 text-text-secondary hover:text-accent rounded-md"
+                        className="p-1 text-text-secondary opacity-0 group-hover:opacity-100 hover:text-accent transition-opacity"
                         aria-label="Edit node name"
                     >
                         <EditIcon />
@@ -271,20 +320,36 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
                 </div>
             )}
           </div>
-          <div className="capitalize mt-2">
-            <p>
-                <span className="font-semibold text-text-secondary">Type: </span>
-                <span style={{ color: ZONE_TYPE_COLORS[selectedNode.type] || ZONE_TYPE_COLORS.unknown, fontWeight: 'bold' }}>
-                    {selectedNode.type}
-                </span>
-            </p>
+
+          {/* Type Editing Section */}
+          <div className="mb-4">
+            <label htmlFor="node-type-select" className="block text-xs font-bold text-text-secondary mb-1 uppercase tracking-wider">Zone Type</label>
+            <select
+                id="node-type-select"
+                value={selectedNode.type}
+                onChange={(e) => onNodeTypeUpdate(selectedNode.id, e.target.value as ZoneType)}
+                className="w-full bg-primary border border-border rounded-md py-1 px-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer hover:bg-tertiary transition-colors"
+            >
+                <option value="avalon">Avalon (Gold)</option>
+                <option value="black">Black Zone (White)</option>
+                <option value="royal">Royal (Blue)</option>
+                <option value="unknown">Unknown (Grey)</option>
+            </select>
+            <div 
+                className="w-full h-2 mt-2 rounded-full transition-colors duration-300" 
+                style={{ backgroundColor: ZONE_TYPE_COLORS[selectedNode.type] || ZONE_TYPE_COLORS.unknown }}
+            />
           </div>
+
           {connections.length > 0 && (
             <div className="mt-4 pt-3 border-t border-border">
-              <h4 className="font-semibold text-text-secondary mb-2">Connections ({connections.length}):</h4>
+              <h4 className="font-semibold text-text-secondary mb-2 text-sm">Connections ({connections.length}):</h4>
               <ul className="text-sm space-y-1 max-h-48 overflow-y-auto pr-2">
                 {connections.map((connName, index) => (
-                  <li key={index}>{connName as string}</li>
+                  <li key={index} className="flex items-center gap-2">
+                     <div className="w-1 h-1 bg-accent rounded-full"></div>
+                     {connName as string}
+                  </li>
                 ))}
               </ul>
             </div>
