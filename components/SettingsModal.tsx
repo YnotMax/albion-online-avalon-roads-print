@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getApiKey, setApiKey, clearApiKey, OUR_API_KEY } from '../services/apiKeyService';
+import { getApiKey, setApiKey, clearApiKey } from '../services/apiKeyService';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -7,8 +7,7 @@ interface SettingsModalProps {
 }
 
 const maskApiKey = (key: string | null): string => {
-  if (!key) return "Not Set";
-  if (key === OUR_API_KEY) return "Using Our Key";
+  if (!key) return "Não configurada";
   return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
 };
 
@@ -33,24 +32,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyRese
     <div className="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-secondary border border-border rounded-lg shadow-2xl max-w-md w-full p-6 text-left animate-fade-in-up" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-accent">API Key Settings</h2>
+          <h2 className="text-xl font-bold text-accent">Configurações de Chave API</h2>
           <button onClick={onClose} className="text-2xl text-text-secondary hover:text-text-primary leading-none">&times;</button>
         </div>
         
         <p className="text-text-secondary mb-4">
-          Current Key: <span className="font-mono bg-primary p-1 rounded">{maskApiKey(currentKey)}</span>
+          Chave Atual: <span className="font-mono bg-primary p-1 rounded">{maskApiKey(currentKey)}</span>
         </p>
         
         <div className="space-y-4">
           <label htmlFor="api-key-input" className="block text-sm font-medium text-text-secondary">
-            Enter a new Gemini API key to change it:
+            Insira uma nova chave API Gemini:
           </label>
           <input
             id="api-key-input"
             type="password"
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
-            placeholder="Enter new API Key"
+            placeholder="Nova Chave API"
             className="w-full bg-primary border border-border rounded-md p-2 text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <button
@@ -58,7 +57,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyRese
             disabled={!newKey.trim()}
             className="w-full bg-success hover:bg-opacity-80 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors duration-200 disabled:bg-tertiary disabled:cursor-not-allowed"
           >
-            Save New Key
+            Salvar Nova Chave
           </button>
         </div>
         
@@ -67,10 +66,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyRese
             onClick={handleClearKey}
             className="w-full bg-danger hover:bg-opacity-80 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
           >
-            Remove Key & Reset
+            Remover Chave e Resetar
           </button>
           <p className="text-xs text-text-secondary mt-2 text-center">
-            This will require you to set a key again on next use.
+            Isso exigirá que você configure uma chave novamente no próximo uso.
           </p>
         </div>
       </div>

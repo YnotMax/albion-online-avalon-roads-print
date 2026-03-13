@@ -11,9 +11,6 @@ import { DebugLog } from './components/DebugLog';
 import logger from './services/logger';
 import { AlbionConnection, PendingValidation, ZoneType } from './types';
 import { ValidationModal } from './components/ValidationModal';
-import { getApiKey, clearApiKey } from './services/apiKeyService';
-import { ApiKeySetup } from './components/ApiKeySetup';
-import { SettingsModal } from './components/SettingsModal';
 
 const App: React.FC = () => {
   const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType } = useGraphData();
@@ -22,15 +19,7 @@ const App: React.FC = () => {
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isLogVisible, setIsLogVisible] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<PendingValidation | null>(null);
-  const [isKeySet, setIsKeySet] = useState(false);
-  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (getApiKey()) {
-      setIsKeySet(true);
-    }
-  }, []);
 
   // Reusable function to process an image file (from paste or upload)
   const processImageFile = useCallback(async (imageFile: File) => {
@@ -205,15 +194,6 @@ const App: React.FC = () => {
     setPendingValidation(null);
   };
 
-  const handleKeyReset = () => {
-    clearApiKey();
-    setIsKeySet(false);
-  };
-
-  if (!isKeySet) {
-    return <ApiKeySetup onKeySet={() => setIsKeySet(true)} />;
-  }
-
   return (
     <div className="flex flex-col h-screen bg-primary overflow-hidden">
       <Header 
@@ -225,7 +205,6 @@ const App: React.FC = () => {
         isFormVisible={isFormVisible}
         onToggleLog={() => setIsLogVisible(!isLogVisible)}
         isLogVisible={isLogVisible}
-        onToggleSettings={() => setIsSettingsVisible(true)}
       />
       
       <input 
@@ -263,13 +242,6 @@ const App: React.FC = () => {
       </main>
 
       <DebugLog isVisible={isLogVisible} />
-      
-      {isSettingsVisible && (
-        <SettingsModal 
-          onClose={() => setIsSettingsVisible(false)}
-          onKeyReset={handleKeyReset}
-        />
-      )}
 
       {pendingValidation && (
         <ValidationModal 
