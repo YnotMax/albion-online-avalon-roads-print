@@ -2,6 +2,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { AlbionConnection } from '../types';
 import logger from './logger';
+import { getApiKey } from './apiKeyService';
 
 const responseSchema = {
   type: Type.OBJECT,
@@ -23,9 +24,9 @@ const responseSchema = {
 };
 
 export async function extractConnectionFromImage(base64Image: string): Promise<AlbionConnection> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
-    const errorMsg = "Gemini API Key is not set. Please set it in the environment variables.";
+    const errorMsg = "Chave API Gemini não configurada. Por favor, configure-a nas configurações.";
     logger.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -34,7 +35,7 @@ export async function extractConnectionFromImage(base64Image: string): Promise<A
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: {
         parts: [
           {

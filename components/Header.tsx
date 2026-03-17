@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { SaveIcon, LoadIcon, ClearIcon, AddConnectionIcon, DebugIcon, UploadIcon } from './icons';
+import { SaveIcon, LoadIcon, ClearIcon, AddConnectionIcon, DebugIcon, UploadIcon, SettingsIcon } from './icons';
 
 interface HeaderProps {
   onClear: () => void;
@@ -11,6 +11,7 @@ interface HeaderProps {
   isFormVisible: boolean;
   onToggleLog: () => void;
   isLogVisible: boolean;
+  onOpenSettings: () => void;
 }
 
 const IconButton: React.FC<{ onClick: () => void; children: React.ReactNode; 'aria-label': string, className?: string }> = ({ onClick, children, 'aria-label': ariaLabel, className = '' }) => (
@@ -23,7 +24,7 @@ const IconButton: React.FC<{ onClick: () => void; children: React.ReactNode; 'ar
   </button>
 );
 
-export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onUpload, onToggleForm, isFormVisible, onToggleLog, isLogVisible }) => {
+export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onUpload, onToggleForm, isFormVisible, onToggleLog, isLogVisible, onOpenSettings }) => {
   return (
     <header className="bg-secondary border-b border-border p-2 flex justify-between items-center z-10 shadow-md flex-shrink-0">
       <h1 className="text-lg md:text-xl font-bold text-text-primary ml-2">Avalon Scribe</h1>
@@ -46,6 +47,9 @@ export const Header: React.FC<HeaderProps> = ({ onClear, onSave, onLoad, onUploa
         </IconButton>
         <IconButton onClick={onToggleLog} aria-label="Toggle Debug Log" className={`hover:bg-tertiary ${isLogVisible ? 'bg-tertiary text-accent' : ''}`}>
           <DebugIcon />
+        </IconButton>
+        <IconButton onClick={onOpenSettings} aria-label="Open Settings" className="hover:bg-tertiary">
+          <SettingsIcon />
         </IconButton>
       </div>
     </header>
