@@ -130,8 +130,19 @@ export const useGraphData = () => {
             }
             return node;
         });
-        // We don't need to change links, but we return a new state object to trigger re-render
-        return { ...prevData, nodes: newNodes };
+
+        // IMPORTANT: We must clean the links (convert source/target objects back to IDs)
+        // whenever we replace node objects in the nodes array. 
+        // Otherwise, ForceGraph will keep links pointing to the "old" node objects
+        // while the "new" node objects (with the same ID but new properties) 
+        // will be rendered at different positions, causing a "drift" or misalignment.
+        const newLinks = prevData.links.map(link => ({
+            ...link,
+            source: typeof link.source === 'object' ? (link.source as any).id : link.source,
+            target: typeof link.target === 'object' ? (link.target as any).id : link.target
+        }));
+
+        return { nodes: newNodes, links: newLinks };
     });
   }, []);
 
