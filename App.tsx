@@ -14,9 +14,13 @@ import { ValidationModal } from './components/ValidationModal';
 import { getApiKey, clearApiKey } from './services/apiKeyService';
 import { ApiKeySetup } from './components/ApiKeySetup';
 import { SettingsModal } from './components/SettingsModal';
+import { MapManagerModal } from './components/MapManagerModal';
+import { MapStorage, SavedMap } from './types';
+
+const MAPS_STORAGE_KEY = 'avalonScribeMaps';
 
 const App: React.FC = () => {
-  const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType } = useGraphData();
+  const { nodes, links, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType, hasUnsavedChanges, markAsSaved } = useGraphData();
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
@@ -24,11 +28,32 @@ const App: React.FC = () => {
   const [pendingValidation, setPendingValidation] = useState<PendingValidation | null>(null);
   const [isKeySet, setIsKeySet] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [isMapManagerVisible, setIsMapManagerVisible] = useState(false);
+  const [currentMapName, setCurrentMapName] = useState<string>('Novo Mapa');
+  const [maps, setMaps] = useState<MapStorage>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (getApiKey()) {
       setIsKeySet(true);
+    }
+    
+    // Load maps from storage
+    const stored = localStorage.getItem(MAPS_STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsedMaps: MapStorage = JSON.parse(stored);
+        setMaps(parsedMaps);
+        
+        // Load last used map if available
+        const lastMapName = localStorage.getItem('avalonScribeLastMap');
+        if (lastMapName && parsedMaps[lastMapName]) {
+          setGraph(parsedMaps[lastMapName].data);
+          setCurrentMapName(lastMapName);
+        }
+      } catch (e) {
+        console.error('Failed to load maps', e);
+      }
     }
   }, []);
 
@@ -133,7 +158,16 @@ const App: React.FC = () => {
     }
   };
 
-  const saveMap = () => {
+  const saveMap = (name?: string) => {
+    const mapName = name || currentMapName;
+    if (!mapName || mapName === 'Novo Mapa') {
+      const newName = prompt('Digite um nome para este mapa:', currentMapName);
+      if (!newName) return;
+      setCurrentMapName(newName);
+      saveMap(newName);
+      return;
+    }
+
     try {
       // Clean links to ensure we save IDs, not circular node objects from ForceGraph
       const cleanLinks = links.map(link => ({
@@ -142,38 +176,57 @@ const App: React.FC = () => {
         target: typeof link.target === 'object' ? (link.target as any).id : link.target,
       }));
 
-      const mapData = JSON.stringify({ nodes, links: cleanLinks });
-      localStorage.setItem('avalonScribeMap', mapData);
-      setToast({ message: 'Map saved successfully!', type: 'success' });
-      logger.info('Map saved to localStorage.');
+      const mapData = { nodes, links: cleanLinks };
+      const newMaps = { ...maps };
+      
+      newMaps[mapName] = {
+        name: mapName,
+        data: mapData,
+        lastModified: Date.now()
+      };
+
+      setMaps(newMaps);
+      localStorage.setItem(MAPS_STORAGE_KEY, JSON.stringify(newMaps));
+      localStorage.setItem('avalonScribeLastMap', mapName);
+      markAsSaved();
+      setToast({ message: `Mapa "${mapName}" salvo com sucesso!`, type: 'success' });
+      logger.info(`Map "${mapName}" saved to localStorage.`);
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        setToast({ message: 'Failed to save map.', type: 'error' });
+        setToast({ message: 'Falha ao salvar mapa.', type: 'error' });
         logger.error(`Failed to save map: ${error}`);
     }
   };
 
-  const loadMap = () => {
-    const savedMap = localStorage.getItem('avalonScribeMap');
-    if (savedMap) {
-      try {
-        const { nodes: loadedNodes, links: loadedLinks } = JSON.parse(savedMap);
-        const validatedLinks = loadedLinks.map((link: any) => ({
-          ...link,
-          expiration: new Date(link.expiration).getTime(),
-        }));
-        setGraph({ nodes: loadedNodes, links: validatedLinks });
-        setToast({ message: 'Map loaded successfully!', type: 'success' });
-        logger.info('Map loaded from localStorage.');
-      } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
-        setToast({ message: 'Failed to load map data.', type: 'error'});
-        logger.error(`Failed to parse map data from localStorage: ${error}`);
+  const handleLoadMap = (map: SavedMap) => {
+    setGraph(map.data);
+    setCurrentMapName(map.name);
+    localStorage.setItem('avalonScribeLastMap', map.name);
+    setIsMapManagerVisible(false);
+    setToast({ message: `Mapa "${map.name}" carregado!`, type: 'success' });
+  };
+
+  const handleDeleteMap = (name: string) => {
+    if (confirm(`Tem certeza que deseja excluir o mapa "${name}"?`)) {
+      const newMaps = { ...maps };
+      delete newMaps[name];
+      setMaps(newMaps);
+      localStorage.setItem(MAPS_STORAGE_KEY, JSON.stringify(newMaps));
+      
+      if (currentMapName === name) {
+        setCurrentMapName('Novo Mapa');
+        clearGraph();
       }
-    } else {
-      setToast({ message: 'No saved map found.', type: 'error' });
-      logger.warn('No saved map found in localStorage.');
+      
+      setToast({ message: `Mapa "${name}" excluído.`, type: 'success' });
     }
+  };
+
+  const handleNewMap = () => {
+    clearGraph();
+    setCurrentMapName('Novo Mapa');
+    setIsMapManagerVisible(false);
+    setToast({ message: 'Novo mapa iniciado.', type: 'success' });
   };
 
   const handleNodeUpdate = (oldName: string, newName: string) => {
@@ -211,8 +264,8 @@ const App: React.FC = () => {
       
       <Header 
         onClear={clearGraph} 
-        onLoad={loadMap} 
-        onSave={saveMap} 
+        onLoad={() => setIsMapManagerVisible(true)} 
+        onSave={() => saveMap()} 
         onUpload={triggerFileUpload}
         onToggleForm={() => setIsFormVisible(!isFormVisible)}
         isFormVisible={isFormVisible}
@@ -220,6 +273,48 @@ const App: React.FC = () => {
         isLogVisible={isLogVisible}
         onOpenSettings={() => setIsSettingsVisible(true)}
       />
+      
+      <div className="bg-tertiary/20 px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest leading-none mb-1">Mapa Atual</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-accent">{currentMapName}</span>
+              {hasUnsavedChanges && (
+                <span className="text-[9px] bg-danger/20 text-danger px-1.5 py-0.5 rounded-md font-bold animate-pulse border border-danger/30">
+                  NÃO SALVO
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => {
+              const newName = prompt('Renomear mapa para:', currentMapName);
+              if (newName && newName.trim()) {
+                setCurrentMapName(newName.trim());
+                setToast({ message: `Mapa renomeado para "${newName.trim()}". Lembre-se de salvar!`, type: 'success' });
+              }
+            }}
+            className="px-3 py-1 text-[10px] bg-tertiary hover:bg-tertiary/80 text-text-primary rounded border border-border transition-colors uppercase font-bold"
+          >
+            Renomear
+          </button>
+          <button 
+            onClick={() => {
+              const newName = prompt('Salvar uma cópia como:', `${currentMapName} (Cópia)`);
+              if (newName && newName.trim()) {
+                saveMap(newName.trim());
+              }
+            }}
+            className="px-3 py-1 text-[10px] bg-accent/10 hover:bg-accent/20 text-accent rounded border border-accent/30 transition-colors uppercase font-bold"
+          >
+            Salvar Como
+          </button>
+        </div>
+      </div>
       
       <input 
         type="file" 
@@ -262,6 +357,18 @@ const App: React.FC = () => {
           data={pendingValidation}
           onConfirm={handleValidationConfirm}
           onCancel={handleValidationCancel}
+        />
+      )}
+
+      {isMapManagerVisible && (
+        <MapManagerModal 
+          onClose={() => setIsMapManagerVisible(false)}
+          onLoadMap={handleLoadMap}
+          onDeleteMap={handleDeleteMap}
+          onNewMap={handleNewMap}
+          currentMapName={currentMapName}
+          hasUnsavedChanges={hasUnsavedChanges}
+          maps={maps}
         />
       )}
 

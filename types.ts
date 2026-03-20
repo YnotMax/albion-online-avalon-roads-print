@@ -26,6 +26,16 @@ export interface GraphData {
   links: CustomLink[];
 }
 
+export interface SavedMap {
+  name: string;
+  data: GraphData;
+  lastModified: number;
+}
+
+export interface MapStorage {
+  [name: string]: SavedMap;
+}
+
 export interface PendingValidation {
   connection: AlbionConnection;
   image: string;

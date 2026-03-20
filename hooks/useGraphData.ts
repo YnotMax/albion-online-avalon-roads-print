@@ -6,6 +6,7 @@ import { getZoneType } from '../data/zoneNames';
 
 export const useGraphData = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Helper to normalize strings to uppercase to avoid case sensitivity issues
   // This is the single source of truth for ID generation
@@ -60,6 +61,7 @@ export const useGraphData = () => {
         newLinks.push({ source: origemRaw, target: destinoRaw, expiration });
       }
 
+      setHasUnsavedChanges(true);
       return { nodes: newNodes, links: newLinks };
     });
   }, []);
@@ -114,6 +116,7 @@ export const useGraphData = () => {
             return newLink;
         });
         
+        setHasUnsavedChanges(true);
         return { nodes: newNodes, links: newLinks };
     });
     return true;
@@ -142,6 +145,7 @@ export const useGraphData = () => {
             target: typeof link.target === 'object' ? (link.target as any).id : link.target
         }));
 
+        setHasUnsavedChanges(true);
         return { nodes: newNodes, links: newLinks };
     });
   }, []);
@@ -149,6 +153,7 @@ export const useGraphData = () => {
   const clearGraph = useCallback(() => {
     logger.info('Graph cleared.');
     setGraphData({ nodes: [], links: [] });
+    setHasUnsavedChanges(false);
   }, []);
 
   const setGraph = useCallback((data: GraphData) => {
@@ -213,6 +218,11 @@ export const useGraphData = () => {
     }
 
     setGraphData({ nodes: sanitizedNodes, links: sanitizedLinks });
+    setHasUnsavedChanges(false);
+  }, []);
+
+  const markAsSaved = useCallback(() => {
+    setHasUnsavedChanges(false);
   }, []);
 
   useEffect(() => {
@@ -228,6 +238,7 @@ export const useGraphData = () => {
         const removedCount = prevData.links.length - activeLinks.length;
         if (removedCount > 0) {
             logger.info(`Removed ${removedCount} expired link(s).`);
+            setHasUnsavedChanges(true);
         }
 
         const connectedNodeIds = new Set<string>();
@@ -247,5 +258,5 @@ export const useGraphData = () => {
     return () => clearInterval(interval);
   }, []);
 
-  return { ...graphData, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType };
+  return { ...graphData, addConnection, clearGraph, setGraph, updateNodeName, updateNodeType, hasUnsavedChanges, markAsSaved };
 };
