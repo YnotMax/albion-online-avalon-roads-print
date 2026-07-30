@@ -11,11 +11,13 @@ import { DebugLog } from './components/DebugLog';
 import logger from './services/logger';
 import { AlbionConnection, PendingValidation, ZoneType } from './types';
 import { ValidationModal } from './components/ValidationModal';
-import { getApiKey, clearApiKey } from './services/apiKeyService';
+import { getApiKey, clearApiKey, getUseSystemKey } from './services/apiKeyService';
 import { ApiKeySetup } from './components/ApiKeySetup';
 import { SettingsModal } from './components/SettingsModal';
 import { MapManagerModal } from './components/MapManagerModal';
 import { MapStorage, SavedMap } from './types';
+
+import { RouteFinderModal } from './components/RouteFinderModal';
 
 const MAPS_STORAGE_KEY = 'avalonScribeMaps';
 
@@ -29,12 +31,14 @@ const App: React.FC = () => {
   const [isKeySet, setIsKeySet] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isMapManagerVisible, setIsMapManagerVisible] = useState(false);
+  const [isRouteFinderVisible, setIsRouteFinderVisible] = useState(false);
+  const [highlightedPath, setHighlightedPath] = useState<string[] | null>(null);
   const [currentMapName, setCurrentMapName] = useState<string>('Novo Mapa');
   const [maps, setMaps] = useState<MapStorage>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (getApiKey()) {
+    if (getApiKey() || getUseSystemKey()) {
       setIsKeySet(true);
     }
     
@@ -222,6 +226,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleImportMap = (map: SavedMap) => {
+    let finalName = map.name;
+    // ensure unique name
+    if (maps[finalName]) {
+      finalName = `${finalName} (Importado)`;
+    }
+    const newMaps = { ...maps, [finalName]: { ...map, name: finalName, lastModified: Date.now() } };
+    setMaps(newMaps);
+    localStorage.setItem(MAPS_STORAGE_KEY, JSON.stringify(newMaps));
+    setToast({ message: `Mapa "${finalName}" importado com sucesso!`, type: 'success' });
+  };
+
   const handleNewMap = () => {
     clearGraph();
     setCurrentMapName('Novo Mapa');
@@ -272,6 +288,7 @@ const App: React.FC = () => {
         onToggleLog={() => setIsLogVisible(!isLogVisible)}
         isLogVisible={isLogVisible}
         onOpenSettings={() => setIsSettingsVisible(true)}
+        onOpenRouteFinder={() => setIsRouteFinderVisible(true)}
       />
       
       <div className="bg-tertiary/20 px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2">
@@ -339,13 +356,14 @@ const App: React.FC = () => {
             links={links} 
             onNodeUpdate={handleNodeUpdate} 
             onNodeTypeUpdate={handleNodeTypeUpdate}
+            highlightedPath={highlightedPath}
         />
         {nodes.length === 0 && !isLoading && <Instructions />}
         {isLoading && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center z-20 space-y-4">
             <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-lg text-text-primary">Scribing the path... AI is thinking.</p>
-            <p className="text-sm text-text-secondary">This may take a moment.</p>
+            <p className="text-lg text-text-primary">Mapeando a rota... IA analisando a imagem.</p>
+            <p className="text-sm text-text-secondary">Isso pode levar alguns segundos.</p>
           </div>
         )}
       </main>
@@ -366,6 +384,7 @@ const App: React.FC = () => {
           onLoadMap={handleLoadMap}
           onDeleteMap={handleDeleteMap}
           onNewMap={handleNewMap}
+          onImportMap={handleImportMap}
           currentMapName={currentMapName}
           hasUnsavedChanges={hasUnsavedChanges}
           maps={maps}
@@ -379,6 +398,14 @@ const App: React.FC = () => {
             setIsKeySet(false);
             setToast({ message: 'API Key removed. Please set a new one.', type: 'error' });
           }}
+        />
+      )}
+
+      {isRouteFinderVisible && (
+        <RouteFinderModal 
+          onClose={() => setIsRouteFinderVisible(false)} 
+          connections={links}
+          onRouteFound={(path) => setHighlightedPath(path)}
         />
       )}
 

@@ -3,12 +3,14 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import ForceGraph2D, { NodeObject } from 'react-force-graph-2d';
 import { GraphData, CustomNode, ZoneType } from '../types';
 import { EditIcon } from './icons';
+import { findShortestPathToType } from '../services/pathfinding';
 
 interface GraphCanvasProps {
   nodes: GraphData['nodes'];
   links: GraphData['links'];
   onNodeUpdate: (oldName: string, newName: string) => void;
   onNodeTypeUpdate: (nodeId: string, newType: ZoneType) => void;
+  highlightedPath?: string[] | null;
 }
 
 interface ForceGraphInstance {
@@ -35,7 +37,7 @@ const formatTime = (ms: number): string => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 };
 
-export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUpdate, onNodeTypeUpdate }) => {
+export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUpdate, onNodeTypeUpdate, highlightedPath }) => {
   const fgRef = useRef<ForceGraphInstance | null>(null);
   const [graphData, setGraphData] = useState({ nodes, links });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -80,6 +82,21 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
 
     return { nodes: filteredNodes, links: filteredLinks };
   }, [nodes, links, searchTerm]);
+
+  const distancesToRoyal = useMemo(() => {
+    const distances: Record<string, number> = {};
+    nodes.forEach(node => {
+        if (node.type === 'black') {
+            const res = findShortestPathToType(node.name as string, 'royal', links as any);
+            if (res) {
+                distances[node.id as string] = res.distance;
+            } else {
+                distances[node.id as string] = -1; // Unreachable
+            }
+        }
+    });
+    return distances;
+  }, [nodes, links]);
 
   useEffect(() => {
     setGraphData(filteredData);
@@ -183,17 +200,43 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
     const nodeType: ZoneType = node.type || 'unknown';
     const nodeColor = ZONE_TYPE_COLORS[nodeType];
 
-    ctx.fillStyle = 'rgba(22, 27, 34, 0.9)';
+    const isHighlighted = highlightedPath ? highlightedPath.includes(node.id) : false;
+
+    ctx.fillStyle = isHighlighted ? 'rgba(88, 166, 255, 0.2)' : 'rgba(22, 27, 34, 0.9)';
     ctx.fillRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
     
-    ctx.strokeStyle = nodeColor;
-    ctx.lineWidth = 2 / globalScale; // Slightly thicker to see color better
+    ctx.strokeStyle = isHighlighted ? '#FFC700' : nodeColor; // Highlight with gold
+    ctx.lineWidth = (isHighlighted ? 4 : 2) / globalScale;
     ctx.strokeRect(node.x - bgWidth / 2, node.y - bgHeight / 2, bgWidth, bgHeight);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#C9D1D9';
     ctx.fillText(label, node.x, node.y);
+
+    // Render distance badge for black zones
+    if (nodeType === 'black') {
+        const distance = distancesToRoyal[node.id as string];
+        if (distance !== undefined && distance >= 0) {
+            const badgeRadius = Math.max(8, fontSize * 0.6) / globalScale;
+            const badgeX = node.x + bgWidth / 2;
+            const badgeY = node.y - bgHeight / 2;
+            
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, badgeRadius, 0, 2 * Math.PI, false);
+            ctx.fillStyle = '#58A6FF'; // Royal blue color to indicate distance to safe zone
+            ctx.fill();
+            
+            ctx.strokeStyle = '#0D1117'; // Dark stroke for contrast
+            ctx.lineWidth = 1.5 / globalScale;
+            ctx.stroke();
+
+            const badgeFontSize = 10 / globalScale;
+            ctx.font = `bold ${badgeFontSize}px Sans-Serif`;
+            ctx.fillStyle = '#0D1117'; // Dark text
+            ctx.fillText(distance.toString(), badgeX, badgeY);
+        }
+    }
   };
 
   const linkCanvasObject = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -215,11 +258,20 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
         linkColor = '#8B949E'; // Expired grey
     }
 
+    let isLinkHighlighted = false;
+    if (highlightedPath) {
+        const startIndex = highlightedPath.indexOf(start.id as string);
+        const endIndex = highlightedPath.indexOf(end.id as string);
+        if (startIndex !== -1 && endIndex !== -1 && Math.abs(startIndex - endIndex) === 1) {
+            isLinkHighlighted = true;
+        }
+    }
+
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = linkColor;
-    ctx.lineWidth = 1.5 / globalScale;
+    ctx.strokeStyle = isLinkHighlighted ? '#FFC700' : linkColor;
+    ctx.lineWidth = (isLinkHighlighted ? 4 : 1.5) / globalScale;
     ctx.stroke();
 
     const timeLabel = formatTime(remainingTime);
@@ -312,10 +364,13 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, links, onNodeUp
                     <p className="text-lg font-bold break-words w-full">{selectedNode.name}</p>
                     <button
                         onClick={() => { setIsEditingNode(true); setEditedNodeName(selectedNode.name); }}
-                        className="p-1 text-text-secondary opacity-0 group-hover:opacity-100 hover:text-accent transition-opacity"
-                        aria-label="Edit node name"
+                        className="group/edit relative p-1 text-text-secondary opacity-0 group-hover:opacity-100 hover:text-accent transition-opacity"
+                        aria-label="Editar nome"
                     >
                         <EditIcon />
+                        <span className="pointer-events-none absolute bottom-full mb-2 right-1/2 translate-x-1/2 whitespace-nowrap rounded bg-[#0D1117] border border-[#30363D] px-2 py-1 text-xs text-[#C9D1D9] opacity-0 transition-opacity group-hover/edit:opacity-100 z-50">
+                          Editar nome
+                        </span>
                     </button>
                 </div>
             )}

@@ -1,5 +1,6 @@
 {
   "name": "Avalon Scribe",
   "description": "An application that receives manual screenshots from Albion Online, extracts Avalon Roads connection data using a multimodal AI, and displays them visually on an interactive graph map.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

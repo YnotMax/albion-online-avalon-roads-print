@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getApiKey, setApiKey, clearApiKey } from '../services/apiKeyService';
+import { getApiKey, setApiKey, clearApiKey, getUseSystemKey, setUseSystemKey } from '../services/apiKeyService';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -14,12 +14,18 @@ const maskApiKey = (key: string | null): string => {
 export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyReset }) => {
   const [newKey, setNewKey] = useState('');
   const currentKey = useMemo(() => getApiKey(), []);
+  const usesSystemKey = useMemo(() => getUseSystemKey(), []);
 
   const handleSaveKey = () => {
     if (newKey.trim()) {
       setApiKey(newKey.trim());
       onClose();
     }
+  };
+
+  const handleUseSystemKey = () => {
+    setUseSystemKey();
+    onClose();
   };
 
   const handleClearKey = () => {
@@ -37,19 +43,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyRese
         </div>
         
         <p className="text-text-secondary mb-4">
-          Chave Atual: <span className="font-mono bg-primary p-1 rounded">{maskApiKey(currentKey)}</span>
+          Status Atual: <span className="font-mono bg-primary p-1 rounded font-bold">{usesSystemKey ? 'Usando Chave do AI Studio (Sistema)' : maskApiKey(currentKey)}</span>
         </p>
         
         <div className="space-y-4">
           <label htmlFor="api-key-input" className="block text-sm font-medium text-text-secondary">
-            Insira uma nova chave API Gemini:
+            Insira uma nova chave API Gemini local:
           </label>
           <input
             id="api-key-input"
             type="password"
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
-            placeholder="Nova Chave API"
+            placeholder="Nova Chave API (sobrescreve o ambiente)"
             className="w-full bg-primary border border-border rounded-md p-2 text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
           />
           <button
@@ -57,8 +63,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onKeyRese
             disabled={!newKey.trim()}
             className="w-full bg-success hover:bg-opacity-80 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors duration-200 disabled:bg-tertiary disabled:cursor-not-allowed"
           >
-            Salvar Nova Chave
+            Salvar Nova Chave Local
           </button>
+
+          {!usesSystemKey && (
+            <button
+              onClick={handleUseSystemKey}
+              className="w-full bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-md shadow-sm transition-colors duration-200 border border-border"
+            >
+              Usar Chave do Ambiente AI Studio
+            </button>
+          )}
         </div>
         
         <div className="mt-6 pt-4 border-t border-border">

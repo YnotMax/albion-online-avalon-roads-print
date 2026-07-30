@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { setApiKey } from '../services/apiKeyService';
+import { setApiKey, setUseSystemKey } from '../services/apiKeyService';
 
 interface ApiKeySetupProps {
   onKeySet: () => void;
@@ -13,6 +13,11 @@ export const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySet }) => {
       setApiKey(userKey.trim());
       onKeySet();
     }
+  };
+
+  const handleUseSystemKey = () => {
+    setUseSystemKey();
+    onKeySet();
   };
 
   return (
@@ -45,6 +50,17 @@ export const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySet }) => {
                   className="w-full bg-success hover:bg-opacity-80 text-white font-bold py-3 px-4 rounded-md shadow-sm transition-colors duration-200 disabled:bg-tertiary disabled:cursor-not-allowed"
                 >
                   Salvar e Continuar
+                </button>
+                <div className="relative flex items-center py-2">
+                  <div className="flex-grow border-t border-border"></div>
+                  <span className="flex-shrink-0 mx-4 text-text-secondary text-xs uppercase tracking-wider">OU</span>
+                  <div className="flex-grow border-t border-border"></div>
+                </div>
+                <button
+                  onClick={handleUseSystemKey}
+                  className="w-full bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-3 px-4 rounded-md shadow-sm transition-colors duration-200 border border-border"
+                >
+                  Usar Chave do Ambiente AI Studio
                 </button>
               </div>
             </div>

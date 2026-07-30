@@ -8,6 +8,7 @@ interface MapManagerModalProps {
   onLoadMap: (map: SavedMap) => void;
   onDeleteMap: (name: string) => void;
   onNewMap: () => void;
+  onImportMap: (map: SavedMap) => void;
   currentMapName: string;
   hasUnsavedChanges: boolean;
   maps: MapStorage;
@@ -18,6 +19,7 @@ export const MapManagerModal: React.FC<MapManagerModalProps> = ({
   onLoadMap, 
   onDeleteMap, 
   onNewMap,
+  onImportMap,
   currentMapName,
   hasUnsavedChanges,
   maps
@@ -60,12 +62,45 @@ export const MapManagerModal: React.FC<MapManagerModalProps> = ({
         </div>
 
         <div className="p-4 space-y-4">
-          <button 
-            onClick={() => handleAction('new')}
-            className="w-full flex items-center justify-center gap-2 p-3 bg-accent/10 border border-accent/20 hover:bg-accent/20 text-accent rounded-lg transition-all font-semibold"
-          >
-            <PlusIcon /> Novo Mapa
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => handleAction('new')}
+              className="flex-1 flex items-center justify-center gap-2 p-3 bg-accent/10 border border-accent/20 hover:bg-accent/20 text-accent rounded-lg transition-all font-semibold"
+            >
+              <PlusIcon /> Novo Mapa
+            </button>
+            <label className="flex-1 flex items-center justify-center gap-2 p-3 bg-tertiary border border-border hover:bg-tertiary/80 text-text-primary rounded-lg transition-all font-semibold cursor-pointer">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Importar JSON
+              <input 
+                type="file" 
+                accept=".json" 
+                className="hidden" 
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    try {
+                      const data = JSON.parse(event.target?.result as string);
+                      if (data.name && data.data && data.data.nodes && data.data.links) {
+                        onImportMap(data as SavedMap);
+                      } else {
+                        alert('Arquivo JSON inválido para mapa.');
+                      }
+                    } catch (err) {
+                      alert('Erro ao processar arquivo JSON.');
+                    }
+                  };
+                  reader.readAsText(file);
+                  // Reset input
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
 
           <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
             {sortedMaps.length === 0 ? (
@@ -92,13 +127,41 @@ export const MapManagerModal: React.FC<MapManagerModalProps> = ({
                     </p>
                   </div>
                   
-                  <button 
-                    onClick={() => onDeleteMap(map.name)}
-                    className="p-2 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                    title="Excluir mapa"
-                  >
-                    <TrashIcon />
-                  </button>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => {
+                        const blob = new Blob([JSON.stringify(map, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${map.name}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="group/export relative p-2 text-text-secondary hover:text-accent hover:bg-accent/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                      aria-label="Exportar mapa"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      <span className="pointer-events-none absolute bottom-full mb-2 right-0 whitespace-nowrap rounded bg-[#0D1117] border border-[#30363D] px-2 py-1 text-xs text-[#C9D1D9] opacity-0 transition-opacity group-hover/export:opacity-100 z-50">
+                        Exportar mapa
+                      </span>
+                    </button>
+                    
+                    <button 
+                      onClick={() => onDeleteMap(map.name)}
+                      className="group/del relative p-2 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                      aria-label="Excluir mapa"
+                    >
+                      <TrashIcon />
+                      <span className="pointer-events-none absolute bottom-full mb-2 right-0 whitespace-nowrap rounded bg-[#0D1117] border border-[#30363D] px-2 py-1 text-xs text-[#C9D1D9] opacity-0 transition-opacity group-hover/del:opacity-100 z-50">
+                        Excluir mapa
+                      </span>
+                    </button>
+                  </div>
                 </div>
               ))
             )}
